@@ -10,6 +10,9 @@ from core.predictor import predict_months
 from plans.diet_plan import get_diet_plan
 from plans.workout_plan import get_workout_plan
 
+from modules.chatbot import get_fitness_response
+from modules.pdf_report import generate_pdf
+
 
 # ---------------- PAGE CONFIG ---------------- #
 
@@ -18,6 +21,18 @@ st.set_page_config(
     page_icon="💪",
     layout="wide"
 )
+
+
+# ---------------- SESSION STATE ---------------- #
+
+if "report_generated" not in st.session_state:
+    st.session_state.report_generated = False
+
+if "report_data" not in st.session_state:
+    st.session_state.report_data = {}
+
+if "chat_response" not in st.session_state:
+    st.session_state.chat_response = ""
 
 
 # ---------------- SIDEBAR ---------------- #
@@ -66,12 +81,11 @@ if selected == "Home":
     st.info("Use the sidebar to generate your fitness report.")
 
 
-# ---------------- FITNESS REPORT ---------------- #
+# ---------------- FITNESS REPORT PAGE ---------------- #
 
-if selected == "Fitness Report":
+elif selected == "Fitness Report":
 
     st.title("📊 Personalized Fitness Report")
-
 
     # ---------- INPUTS ---------- #
 
@@ -124,7 +138,6 @@ if selected == "Fitness Report":
             ]
         )
 
-
     goal = st.selectbox(
         "Select Goal",
         [
@@ -134,18 +147,13 @@ if selected == "Fitness Report":
         ]
     )
 
-
-    # ---------- BUTTON ---------- #
+    # ---------- GENERATE REPORT BUTTON ---------- #
 
     if st.button("Generate Report"):
 
-
         # ---------- CALCULATIONS ---------- #
 
-        bmi = calculate_bmi(
-            current_weight,
-            height
-        )
+        bmi = calculate_bmi(current_weight, height)
 
         bmi_result = bmi_status(bmi)
 
@@ -166,7 +174,6 @@ if selected == "Fitness Report":
 
         workout = get_workout_plan(goal)
 
-
         # ---------- FITNESS SCORE ---------- #
 
         score = 100
@@ -180,6 +187,27 @@ if selected == "Fitness Report":
         if current_weight > target_weight:
             score -= 10
 
+        # ---------- SAVE DATA ---------- #
+
+        st.session_state.report_generated = True
+
+        st.session_state.report_data = {
+            "BMI": bmi,
+            "Status": bmi_result,
+            "Calories Needed": calories,
+            "Fitness Score": score,
+            "Target Weight": target_weight,
+            "Current Weight": current_weight,
+            "Diet Plan": diet,
+            "Workout Plan": workout,
+            "Timeline": timeline
+        }
+
+    # ---------- DISPLAY REPORT ---------- #
+
+    if st.session_state.report_generated:
+
+        data = st.session_state.report_data
 
         # ---------- METRICS ---------- #
 
@@ -187,28 +215,25 @@ if selected == "Fitness Report":
 
         m1, m2, m3 = st.columns(3)
 
-        m1.metric("BMI", bmi)
+        m1.metric("BMI", data["BMI"])
 
-        m2.metric("Calories", f"{calories} kcal")
+        m2.metric("Calories", f'{data["Calories Needed"]} kcal')
 
-        m3.metric("Fitness Score", f"{score}/100")
-
+        m3.metric("Fitness Score", f'{data["Fitness Score"]}/100')
 
         # ---------- BMI STATUS ---------- #
 
         st.subheader("📊 BMI Status")
 
-        st.success(f"Your BMI Status: {bmi_result}")
-
+        st.success(f'Your BMI Status: {data["Status"]}')
 
         # ---------- TIMELINE ---------- #
 
         st.subheader("🎯 Estimated Timeline")
 
         st.info(
-            f"Approx {timeline} months required to reach your target weight."
+            f'Approx {data["Timeline"]} months required to reach your target weight.'
         )
-
 
         # ---------- DIET & WORKOUT ---------- #
 
@@ -218,38 +243,34 @@ if selected == "Fitness Report":
 
             st.subheader("🥗 Diet Plan")
 
-            for item in diet:
-
+            for item in data["Diet Plan"]:
                 st.write(f"✅ {item}")
 
         with col4:
 
             st.subheader("🏋 Workout Plan")
 
-            for exercise in workout:
-
+            for exercise in data["Workout Plan"]:
                 st.write(f"🏃 {exercise}")
-
 
         # ---------- FITNESS SCORE ---------- #
 
         st.subheader("💯 Fitness Score")
 
-        st.progress(score / 100)
-
+        st.progress(data["Fitness Score"] / 100)
 
         # ---------- GRAPH ---------- #
 
         st.subheader("📉 Weight Progress Prediction")
 
         weights = [
-            current_weight,
-            target_weight
+            data["Current Weight"],
+            data["Target Weight"]
         ]
 
         months_data = [
             0,
-            timeline
+            data["Timeline"]
         ]
 
         fig, ax = plt.subplots()
@@ -261,17 +282,50 @@ if selected == "Fitness Report":
         )
 
         ax.set_xlabel("Months")
-
         ax.set_ylabel("Weight (kg)")
-
         ax.set_title("Predicted Weight Journey")
 
         st.pyplot(fig)
 
+        # ---------- PDF REPORT ---------- #
+
+        st.subheader("📄 Download Fitness Report")
+
+        file_path = generate_pdf(data)
+
+        with open(file_path, "rb") as file:
+
+            st.download_button(
+                label="Download PDF Report",
+                data=file,
+                file_name="fitness_report.pdf",
+                mime="application/pdf"
+            )
+
+    # ---------- CHATBOT ---------- #
+
+    st.header("🤖 AI Fitness Chatbot Trainer")
+
+    user_question = st.text_input(
+        "Ask your fitness question:",
+        key="chat_input"
+    )
+
+    if st.button("Ask AI"):
+
+        if user_question.strip() != "":
+
+            response = get_fitness_response(user_question)
+
+            st.session_state.chat_response = response
+
+    if st.session_state.chat_response != "":
+        st.success(st.session_state.chat_response)
+
 
 # ---------------- ABOUT PAGE ---------------- #
 
-if selected == "About":
+elif selected == "About":
 
     st.title("ℹ About Project")
 
